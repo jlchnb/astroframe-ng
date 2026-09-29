@@ -1,0 +1,25 @@
+<div class="relative h-screen w-screen bg-black overflow-hidden select-none">
+  <canvas #starfield class="absolute inset-0 block w-full h-full"></canvas>
+
+  <div class="absolute inset-0 pointer-events-none">
+    <div class="pointer-events-auto">
+      <div
+        *ngFor="let p of planets"
+        class="absolute rounded-full border border-white/20 cursor-pointer flex items-center justify-center"
+        [style.width.px]="p.size"
+        [style.height.px]="p.size"
+        [style.left.px]="p.left"
+        [style.top.px]="p.top"
+        [ngStyle]="{ background: p.color }"
+        (click)="flyTo(p)"
+        title="Ir a {{p.name}}"
+      >
+        <span class="text-white text-[10px] opacity-80">{{ p.name }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="absolute bottom-4 left-4 text-white/80 text-sm">
+    Clickea un planeta para “viajar”.
+  </div>
+</div>
