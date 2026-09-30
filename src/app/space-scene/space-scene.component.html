@@ -1,25 +1,35 @@
 <div class="relative h-screen w-screen bg-black overflow-hidden select-none">
   <canvas #starfield class="absolute inset-0 block w-full h-full"></canvas>
 
-  <div class="absolute inset-0 pointer-events-none">
-    <div class="pointer-events-auto">
-      <div
-        *ngFor="let p of planets"
-        class="absolute rounded-full border border-white/20 cursor-pointer flex items-center justify-center"
-        [style.width.px]="p.size"
-        [style.height.px]="p.size"
-        [style.left.px]="p.left"
-        [style.top.px]="p.top"
-        [ngStyle]="{ background: p.color }"
-        (click)="flyTo(p)"
-        title="Ir a {{p.name}}"
-      >
-        <span class="text-white text-[10px] opacity-80">{{ p.name }}</span>
-      </div>
-    </div>
+  <div
+    *ngFor="let p of planets"
+    data-planet
+    class="absolute left-0 top-0 z-10 rounded-full border border-white/20 cursor-pointer flex items-center justify-center will-change-transform"
+    [style.width.px]="p.size"
+    [style.height.px]="p.size"
+    [style.background]="p.color"
+    (click)="flyTo(p)"
+  >
+    <span class="text-white text-[10px] opacity-80 pointer-events-none">{{ p.name }}</span>
   </div>
 
-  <div class="absolute bottom-4 left-4 text-white/80 text-sm">
-    Clickea un planeta para “viajar”.
-  </div>
+  @if (selected(); as s) {
+    <div
+      class="absolute bottom-10 left-1/2 z-20 w-[min(90vw,28rem)] -translate-x-1/2 rounded-xl border border-white/20 bg-black/70 p-5 text-white backdrop-blur"
+    >
+      <h2 class="mb-2 text-xl font-semibold">{{ s.name }}</h2>
+      <p class="text-sm leading-relaxed text-white/80">{{ s.description }}</p>
+      <button
+        type="button"
+        class="mt-4 rounded-md border border-white/30 px-3 py-1 text-sm hover:bg-white/10"
+        (click)="flyHome()"
+      >
+        Volver
+      </button>
+    </div>
+  } @else {
+    <div class="absolute bottom-4 left-4 z-10 text-white/80 text-sm pointer-events-none">
+      Clickea un planeta para “viajar”.
+    </div>
+  }
 </div>

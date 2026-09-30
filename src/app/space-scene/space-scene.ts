@@ -1,10 +1,24 @@
-import { AfterViewInit, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  ElementRef,
+  OnDestroy,
+  ViewChild,
+  inject,
+  PLATFORM_ID,
+  signal,
+} from '@angular/core';
 import { CommonModule, isPlatformBrowser, DOCUMENT } from '@angular/common';
-import { PLATFORM_ID } from '@angular/core';
-import { animate } from 'motion';
 
 type Star = { x: number; y: number; z: number };
-type Planet = { name: string; left: number; top: number; size: number; color: string };
+type Planet = {
+  name: string;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
+  description: string;
+};
 
 @Component({
   selector: 'app-space-scene',
@@ -16,6 +30,7 @@ type Planet = { name: string; left: number; top: number; size: number; color: st
 export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
   @ViewChild('starfield', { static: true }) canvasRef!: ElementRef<HTMLCanvasElement>;
 
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly doc = inject(DOCUMENT);
   private readonly isBrowser = isPlatformBrowser(this.platformId);
@@ -24,40 +39,47 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
   }
 
   private ctx!: CanvasRenderingContext2D;
-  private width = 0; // tamaño CSS visible
-  private height = 0; // tamaño CSS visible
+  private width = 0;
+  private height = 0;
 
   private camera = { ox: 0, oy: 0, zoom: 1 };
+  private flightRaf = 0;
 
   private stars: Star[] = [];
   private starCount = 900;
   private rafId = 0;
   private running = false;
   private ro?: ResizeObserver;
+  private planetNodes: HTMLElement[] = [];
 
   planets: Planet[] = [
     {
-      name: 'Ares',
-      left: 120,
-      top: 120,
+      name: 'Marte',
+      x: -380,
+      y: -180,
       size: 64,
       color: 'radial-gradient(circle at 40% 40%, #ff9f1c, #c0392b 70%)',
+      description: 'Planeta rojo, conocido como el Planeta de los Dioses.',
     },
     {
-      name: 'Naiad',
-      left: 760,
-      top: 220,
+      name: 'Neptuno',
+      x: 320,
+      y: -120,
       size: 54,
       color: 'radial-gradient(circle at 30% 30%, #8be9fd, #1b6ca8 70%)',
+      description: 'Planeta azul, el octavo planeta del sistema solar.',
     },
     {
-      name: 'Helia',
-      left: 420,
-      top: 420,
+      name: 'Jupiter',
+      x: 40,
+      y: 170,
       size: 72,
       color: 'radial-gradient(circle at 60% 40%, #ffe66d, #e67e22 70%)',
+      description: 'Planeta gigante, el quinto planeta del sistema solar.',
     },
   ];
+
+  selected = signal<Planet | null>(null);
 
   ngAfterViewInit() {
     if (!this.isBrowser || !this.win) return;
@@ -67,14 +89,17 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
     if (!ctx) throw new Error('No se pudo obtener el contexto 2D del canvas.');
     this.ctx = ctx;
 
-    // Observa el contenedor para re-ajustar cuando cambie su tamaño real
-    const host = canvas.parentElement ?? canvas;
-    if ('ResizeObserver' in window) {
+    this.planetNodes = Array.from(
+      this.host.nativeElement.querySelectorAll<HTMLElement>('[data-planet]'),
+    );
+
+    const parent = canvas.parentElement ?? canvas;
+    if ('ResizeObserver' in this.win) {
       this.ro = new ResizeObserver(() => this.onResize());
-      this.ro.observe(host);
+      this.ro.observe(parent);
     }
 
-    this.onResize(); // ajusta CSS + buffer + DPR
+    this.onResize();
     this.win.addEventListener('resize', this.onResize);
 
     this.initStars();
@@ -86,6 +111,7 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
     if (!this.isBrowser || !this.win) return;
     this.running = false;
     if (this.rafId) this.win.cancelAnimationFrame(this.rafId);
+    if (this.flightRaf) this.win.cancelAnimationFrame(this.flightRaf);
     this.win.removeEventListener('resize', this.onResize);
     this.ro?.disconnect();
   }
@@ -104,17 +130,16 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
     this.rafId = this.win.requestAnimationFrame(this.tick);
 
     const ctx = this.ctx;
-    // limpia con unidades CSS (transform ya incluye DPR)
+    const { ox, oy, zoom } = this.camera;
     ctx.clearRect(0, 0, this.width, this.height);
 
-    // halo sutil
     const grd = ctx.createRadialGradient(
       this.width * 0.7,
       this.height * 0.3,
       0,
       this.width * 0.7,
       this.height * 0.3,
-      Math.max(this.width, this.height)
+      Math.max(this.width, this.height),
     );
     grd.addColorStop(0, 'rgba(64,105,225,0.08)');
     grd.addColorStop(1, 'rgba(0,0,0,0)');
@@ -123,60 +148,78 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
 
     const now = this.win.performance.now();
     for (const s of this.stars) {
-      const px = (s.x - this.camera.ox) * (this.camera.zoom * s.z) + this.width / 2;
-      const py = (s.y - this.camera.oy) * (this.camera.zoom * s.z) + this.height / 2;
+      const px = (s.x - ox) * (zoom * s.z) + this.width / 2;
+      const py = (s.y - oy) * (zoom * s.z) + this.height / 2;
       if (px < -2 || px > this.width + 2 || py < -2 || py > this.height + 2) continue;
 
-      const size = Math.max(0.6, 1.2 * this.camera.zoom * (1.3 - s.z));
+      const size = Math.max(0.6, 1.2 * zoom * (1.3 - s.z));
       const tw = 0.7 + 0.3 * Math.sin((s.x + s.y + now * 0.002) * 0.01);
       ctx.fillStyle = `rgba(255,255,255,${tw})`;
       ctx.fillRect(px, py, size, size);
     }
+
+    for (let i = 0; i < this.planetNodes.length; i++) {
+      const p = this.planets[i];
+      const sx = (p.x - ox) * zoom + this.width / 2;
+      const sy = (p.y - oy) * zoom + this.height / 2;
+      this.planetNodes[i].style.transform =
+        `translate(${sx - p.size / 2}px, ${sy - p.size / 2}px) scale(${zoom})`;
+    }
   };
 
-  flyTo(p: Planet) {
-    if (!this.isBrowser) return;
+  private flyCamera(target: { ox: number; oy: number; zoom: number }, onDone?: () => void) {
+    if (!this.isBrowser || !this.win) return;
+    const win = this.win;
+
+    if (this.flightRaf) win.cancelAnimationFrame(this.flightRaf);
+
     const start = { ...this.camera };
-    const px = p.left + p.size / 2;
-    const py = p.top + p.size / 2;
+    const duration = 2000;
+    const t0 = win.performance.now();
 
-    const targetOx = start.ox + (px - this.width / 2) / start.zoom;
-    const targetOy = start.oy + (py - this.height / 2) / start.zoom;
-    const targetZoom = Math.min(start.zoom * 1.4, 2.2);
+    const step = (now: number) => {
+      const raw = Math.min(1, (now - t0) / duration);
+      const t = raw < 0.5 ? 2 * raw * raw : 1 - Math.pow(-2 * raw + 2, 2) / 2; // easeInOut
 
-    animate(
-      { t: 0 },
-      { t: 1 },
-      {
-        duration: 2.0,
-        ease: 'easeInOut',
-        onUpdate: (latest) => {
-          const t = (latest.t as number) ?? 0;
-          this.camera.ox = lerp(start.ox, targetOx, t);
-          this.camera.oy = lerp(start.oy, targetOy, t);
-          this.camera.zoom = lerp(start.zoom, targetZoom, t);
-        },
+      this.camera.ox = lerp(start.ox, target.ox, t);
+      this.camera.oy = lerp(start.oy, target.oy, t);
+      this.camera.zoom = lerp(start.zoom, target.zoom, t);
+
+      if (raw < 1) this.flightRaf = win.requestAnimationFrame(step);
+      else {
+        this.flightRaf = 0;
+        if (onDone) onDone();
       }
-    );
+    };
+    this.flightRaf = win.requestAnimationFrame(step);
+  }
+
+  flyTo(p: Planet) {
+    this.selected.set(null);
+
+    const targetZoom = 180 / p.size;
+
+    this.flyCamera({ ox: p.x, oy: p.y, zoom: targetZoom }, () => this.selected.set(p));
+  }
+
+  flyHome() {
+    this.selected.set(null);
+    this.flyCamera({ ox: 0, oy: 0, zoom: 1 });
   }
 
   private onResize = () => {
     if (!this.isBrowser || !this.win) return;
 
     const canvas = this.canvasRef.nativeElement;
-    const host = canvas.parentElement ?? canvas;
+    const parent = canvas.parentElement ?? canvas;
 
-    // 1) intenta con el rect del host
-    let rect = host.getBoundingClientRect();
+    const rect = parent.getBoundingClientRect();
     let w = Math.round(rect.width);
     let h = Math.round(rect.height);
-
-    // 2) fallback a clientWidth/Height si sigue 0
     if (w === 0 || h === 0) {
-      w = host.clientWidth;
-      h = host.clientHeight;
+      w = parent.clientWidth;
+      h = parent.clientHeight;
     }
-    // 3) último recurso: viewport
     if (w === 0 || h === 0) {
       w = this.win.innerWidth;
       h = this.win.innerHeight;
@@ -185,7 +228,6 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
     this.width = Math.max(1, w);
     this.height = Math.max(1, h);
 
-    // fuerza tamaño CSS explícito
     canvas.style.width = `${this.width}px`;
     canvas.style.height = `${this.height}px`;
 
@@ -193,7 +235,6 @@ export class SpaceSceneComponent implements AfterViewInit, OnDestroy {
     canvas.width = Math.max(1, Math.round(this.width * dpr));
     canvas.height = Math.max(1, Math.round(this.height * dpr));
 
-    // normaliza coordenadas a unidades CSS
     if (this.ctx) this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   };
 }
